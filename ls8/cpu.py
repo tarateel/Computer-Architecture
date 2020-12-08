@@ -60,15 +60,16 @@ class CPU:
                     
                     if stripped_split_line != '':
                         command = int(stripped_split_line, 2)
-                        program.append(command)
+                        self.ram[address] = command
+                        address += 1
                         
         except FileNotFoundError:
             print(f'Error from {sys.argv[0]}: {sys.argv[1]} not found')
             print("(Did you double-check the file name?)")
 
-        for instruction in program:
-            self.ram[address] = instruction
-            address += 1
+        # for instruction in program:
+        #     self.ram[address] = instruction
+        #     address += 1
 
 
     def alu(self, op, reg_a, reg_b):
@@ -127,6 +128,8 @@ class CPU:
             elif IR == PRN:
                 print(self.reg[operand_a])
                 # 2-byte command
+                self.pc += 3
+            elif IR == MUL:
                 self.alu('MUL', operand_a, operand_b)
                 self.pc += 3
             else:

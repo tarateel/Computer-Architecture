@@ -5,6 +5,7 @@ import sys
 LDI = 0b10000010 # store value
 PRN = 0b01000111 # print value
 HLT = 0b00000001 # halt & exit
+MUL = 0b10100010 # multiply
 
 class CPU:
     """Main CPU class."""
@@ -34,15 +35,36 @@ class CPU:
 
         # For now, we've just hardcoded a program:
 
-        program = [
-            # From print8.ls8
-            0b10000010, # LDI R0,8  <-- opcode
-            0b00000000, #  <-- operand
-            0b00001000,  # <-- operand
-            0b01000111,  # PRN R0  <-- opcode
-            0b00000000,  # <-- operand
-            0b00000001,  # HLT  <-- opcode
-        ]
+        # program = [
+        #     # From print8.ls8
+        #     0b10000010, # LDI R0,8  <-- opcode
+        #     0b00000000, #  <-- operand
+        #     0b00001000,  # <-- operand
+        #     0b01000111,  # PRN R0  <-- opcode
+        #     0b00000000,  # <-- operand
+        #     0b00000001,  # HLT  <-- opcode
+        # ]
+        
+        program = []
+        
+        try:
+            if len(sys.argv) < 2:
+                print(f'Error from {sys.argv[0]}: missing filename argument')
+                print(f'Usage: python3 {sys.argv[0]} <somefilename>')
+                sys.exit(1)
+        
+            with open(sys.argv[1]) as file:
+                for line in file:
+                    split_line = line.split('#')[0]
+                    stripped_split_line = split_line.strip()
+                    
+                    if stripped_split_line != '':
+                        command = int(stripped_split_line, 2)
+                        program.append(command)
+                        
+        except FileNotFoundError:
+            print(f'Error from {sys.argv[0]}: {sys.argv[1]} not found')
+            print("(Did you double-check the file name?)")
 
         for instruction in program:
             self.ram[address] = instruction
@@ -54,7 +76,8 @@ class CPU:
 
         if op == "ADD":
             self.reg[reg_a] += self.reg[reg_b]
-        #elif op == "SUB": etc
+        elif op == "MUL":
+            self.reg[reg_a] *= self.reg[reg_b]
         else:
             raise Exception("Unsupported ALU operation")
 
@@ -99,11 +122,15 @@ class CPU:
                 # registers[register_address] = num_to_save
                 self.reg[operand_a] = operand_b
                 # 3-byte command
+                # print(operand_a, operand_b)
                 self.pc += 3
             elif IR == PRN:
                 print(self.reg[operand_a])
                 # 2-byte command
-                self.pc += 2
+                self.alu('MUL', operand_a, operand_b)
+                self.pc += 3
+            else:
+                running = False
             # running code for any particular instruction, the `PC` needs to be updated to point to the next instruction for the next iteration of the loop
             
             # number of bytes an instruction uses can be determined from the two high bits (bits 6-7) of the instruction opcode

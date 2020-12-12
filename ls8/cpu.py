@@ -2,15 +2,20 @@
 
 import sys
 
-LDI = 0b10000010  # store value
-PRN = 0b01000111  # print value
+LDI = 0b10000010  # store value (3-byte)
+PRN = 0b01000111  # print value (2-byte)
 HLT = 0b00000001  # halt & exit
-MUL = 0b10100010  # multiply
-PUSH = 0b01000101
-POP = 0b01000110
-CALL = 0b01010000
+PUSH = 0b01000101  # (2-byte)
+POP = 0b01000110  # (2-byte)
+CALL = 0b01010000  # (2-byte)
 RET = 0b00010001
 
+MUL = 0b10100010  # multiply (3-byte) alu operation
+CMP = 0b10100111 # (3-byte) alu operation
+EQ = 0b00000111
+JMP = 0b01010100 # (2-byte)
+JEQ = 0b01010101 # (2-byte)
+JNE = 0b01010110 # (2-byte)
 
 class CPU:
     """Main CPU class."""
@@ -27,6 +32,7 @@ class CPU:
         self.mar = 0 # memory address register
         self.mdr = 0 # memory data register
         self.hlt = False
+        self.fl = 0b00000000 # 'equal' flag set to zero
 
     # accept address to read & return stored value
     def ram_read(self, mar):  # mar  <-- Memory Address Register
@@ -38,7 +44,7 @@ class CPU:
 
     def load(self):
         """Load a program into memory."""
-        mar = 0
+        address = 0
         # print error message & exit if filename not in command line
         try:
             if len(sys.argv) < 2:
@@ -53,8 +59,8 @@ class CPU:
 
                     if num != '':
                         command = int(num, 2)
-                        self.ram[mar] = command
-                        mar += 1
+                        self.ram[address] = command
+                        address += 1
 
         # # print error message if filename is incorrect
         except FileNotFoundError:
@@ -68,6 +74,20 @@ class CPU:
             self.reg[reg_a] += self.reg[reg_b]
         elif op == "MUL":
             self.reg[reg_a] *= self.reg[reg_b]
+            # `FL` bits: `00000LGE`
+            # * `L` Less-than: during a `CMP`, set to 1 if registerA is less than registerB,
+            # zero otherwise.
+            # * `G` Greater-than: during a `CMP`, set to 1 if registerA is greater than
+            # registerB, zero otherwise.
+            # * `E` Equal: during a `CMP`, set to 1 if registerA is equal to registerB, zero
+            # otherwise.
+        elif op == 'CMP':
+            if self.reg[reg_a] < self.reg[reg_b]:
+                self.fl = 0b00000100  # L flag
+            elif self.reg[reg_a] > self.reg[reg_b]:
+                self.fl = 0b0000010  # G flag
+            elif self.reg[reg_a] == self.reg[reg_b]:
+                self.fl = 0b00000001 # E flag
         else:
             raise Exception("Unsupported ALU operation")
 
@@ -79,7 +99,7 @@ class CPU:
 
         print(f"TRACE: %02X | %02X %02X %02X |" % (
             self.pc,
-            #self.fl,
+            self.fl,
             #self.ie,
             self.ram_read(self.pc),
             self.ram_read(self.pc + 1),
@@ -104,26 +124,32 @@ class CPU:
     def commands(self, ir, reg_a, reg_b):
         if ir == HLT:
             self.hlt = True
+            sys.exit(1)
+            
         elif ir == LDI:
             # registers[register_address] = num_to_save
             self.reg[reg_a] = reg_b
             # 3-byte command
             # print(reg_a, reg_b)
             self.pc += 3
+            
         elif ir == PRN:
             print(self.reg[reg_a])
             # 2-byte command
             self.pc += 2
+            
         elif ir == MUL:
             self.alu('MUL', reg_a, reg_b)
             self.pc += 3
+            
         elif ir == PUSH:
             self.reg[self.sp] -= 1
             reg_value = self.ram[self.pc + 1]
-            mdr = self.reg[reg_value]
             mar = self.reg[self.sp]
+            mdr = self.reg[reg_value]
             self.ram[mar] = mdr
             self.pc += 2
+            
         elif ir == POP:
             reg_value = self.ram[self.pc + 1]
             mar = self.reg[self.sp]
@@ -131,6 +157,36 @@ class CPU:
             self.reg[reg_value] = mdr
             self.reg[self.sp] += 1
             self.pc += 2
+            
+        elif ir == CALL:
+            return_addr = self.pc + 2
+            self.reg[self.sp] -= 1
+            self.ram[self.reg[self.sp]] = return_addr
+            reg_value = self.ram[self.pc + 1]
+            dest_addr = self.reg[reg_value]
+            self.pc = dest_addr
+            
+        elif ir == RET:
+            return_addr = self.ram[self.reg[self.sp]]
+            self.reg[self.sp] += 1
+            self.pc = return_addr
+            
+        elif ir ==CMP:
+            self.alu('CMP', reg_a, reg_b)
+            self.pc += 3
+        
+        elif ir == JMP:
+            reg_value = self.ram[self.pc + 1]
+            self.pc = self.reg[reg_value]
+        
+        elif ir == JEQ:
+            if self.fl == 1:
+                self.pc = self.reg[reg_a]
+                
+        elif ir == JNE:
+            if self.fl != 1:
+                self.pc = self.reg[reg_a]
+                
         else:
-            print(f'Error: Unknown {(ir)}')
+            print(f'Error: Unknown command {(ir)}')
             self.pc += 1

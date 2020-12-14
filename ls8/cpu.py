@@ -12,10 +12,12 @@ RET = 0b00010001
 
 MUL = 0b10100010  # multiply (3-byte) alu operation
 CMP = 0b10100111 # (3-byte) alu operation
-EQ = 0b00000111
 JMP = 0b01010100 # (2-byte)
 JEQ = 0b01010101 # (2-byte)
 JNE = 0b01010110 # (2-byte)
+ADD = 0b10100000
+
+SP = 7
 
 class CPU:
     """Main CPU class."""
@@ -26,21 +28,16 @@ class CPU:
         self.ram = [0] * 256  # hold 256 bytes of memory (RAM)
         self.reg = [0] * 8  # 8 general-purpose registers (R0 - R7)
         self.pc = 0  # program counter
-        self.sp = 7  # stack pointer
-        self.reg[7] = 0xF4  # top of stack or `F4` if stack is empty
-        self.ir = 0 # instruction register
-        self.mar = 0 # memory address register
-        self.mdr = 0 # memory data register
-        self.hlt = False
+        self.reg[SP] = 0xF4  # stack pointer: top of stack or `F4` if stack is empty
         self.fl = 0b00000000 # 'equal' flag set to zero
 
     # accept address to read & return stored value
-    def ram_read(self, mar):  # mar  <-- Memory Address Register
-        return self.ram[mar]
+    def ram_read(self, address):  # mar  <-- Memory Address Register
+        return self.ram[address]
 
     # accept a value to write & address to write it to
-    def ram_write(self, mdr, mar):
-        self.ram[mar] = mdr  # mdr  <-- Memory Data Register
+    def ram_write(self, value, address):
+        self.ram[address] = value  # mdr  <-- Memory Data Register
 
     def load(self):
         """Load a program into memory."""
@@ -70,10 +67,11 @@ class CPU:
     def alu(self, op, reg_a, reg_b):
         """ALU operations."""
 
-        if op == "ADD":
+        if op == ADD:
             self.reg[reg_a] += self.reg[reg_b]
-        elif op == "MUL":
+        elif op == MUL:
             self.reg[reg_a] *= self.reg[reg_b]
+        elif op == CMP:
             # `FL` bits: `00000LGE`
             # * `L` Less-than: during a `CMP`, set to 1 if registerA is less than registerB,
             # zero otherwise.
@@ -81,13 +79,12 @@ class CPU:
             # registerB, zero otherwise.
             # * `E` Equal: during a `CMP`, set to 1 if registerA is equal to registerB, zero
             # otherwise.
-        elif op == 'CMP':
-            if self.reg[reg_a] < self.reg[reg_b]:
-                self.fl = 0b00000100  # L flag
+            if self.reg[reg_a] == self.reg[reg_b]:
+                self.fl = 0b00000001  # E flag
             elif self.reg[reg_a] > self.reg[reg_b]:
                 self.fl = 0b0000010  # G flag
-            elif self.reg[reg_a] == self.reg[reg_b]:
-                self.fl = 0b00000001 # E flag
+            elif self.reg[reg_a] < self.reg[reg_b]:
+                self.fl = 0b00000100  # L flag
         else:
             raise Exception("Unsupported ALU operation")
 
@@ -113,80 +110,66 @@ class CPU:
 
     def run(self):
         """Run the CPU."""
-        while not self.hlt:
+        running = True
+        while running:
             # IR = Instruction Register
-            ir = self.ram_read(self.pc)
+            IR = self.ram_read(self.pc)
             # `operand_a` and `operand_b` renamed reg_a and reg_b
             reg_a = self.ram_read(self.pc + 1)
             reg_b = self.ram_read(self.pc + 2)
-            self.commands(ir, reg_a, reg_b)
-    
-    def commands(self, ir, reg_a, reg_b):
-        if ir == HLT:
-            self.hlt = True
-            sys.exit(1)
             
-        elif ir == LDI:
-            # registers[register_address] = num_to_save
-            self.reg[reg_a] = reg_b
-            # 3-byte command
-            # print(reg_a, reg_b)
-            self.pc += 3
+            if IR == HLT:
+                running = False
             
-        elif ir == PRN:
-            print(self.reg[reg_a])
-            # 2-byte command
-            self.pc += 2
-            
-        elif ir == MUL:
-            self.alu('MUL', reg_a, reg_b)
-            self.pc += 3
-            
-        elif ir == PUSH:
-            self.reg[self.sp] -= 1
-            reg_value = self.ram[self.pc + 1]
-            mar = self.reg[self.sp]
-            mdr = self.reg[reg_value]
-            self.ram[mar] = mdr
-            self.pc += 2
-            
-        elif ir == POP:
-            reg_value = self.ram[self.pc + 1]
-            mar = self.reg[self.sp]
-            mdr = self.ram[mar]
-            self.reg[reg_value] = mdr
-            self.reg[self.sp] += 1
-            self.pc += 2
-            
-        elif ir == CALL:
-            return_addr = self.pc + 2
-            self.reg[self.sp] -= 1
-            self.ram[self.reg[self.sp]] = return_addr
-            reg_value = self.ram[self.pc + 1]
-            dest_addr = self.reg[reg_value]
-            self.pc = dest_addr
-            
-        elif ir == RET:
-            return_addr = self.ram[self.reg[self.sp]]
-            self.reg[self.sp] += 1
-            self.pc = return_addr
-            
-        elif ir ==CMP:
-            self.alu('CMP', reg_a, reg_b)
-            self.pc += 3
-        
-        elif ir == JMP:
-            reg_value = self.ram[self.pc + 1]
-            self.pc = self.reg[reg_value]
-        
-        elif ir == JEQ:
-            if self.fl == 1:
-                self.pc = self.reg[reg_a]
+            elif IR == LDI:
+                self.reg[reg_a] = reg_b
                 
-        elif ir == JNE:
-            if self.fl != 1:
-                self.pc = self.reg[reg_a]
+            elif IR == PRN:
+                print(self.reg[reg_a])
                 
-        else:
-            print(f'Error: Unknown command {(ir)}')
-            self.pc += 1
+            elif IR == MUL:
+                self.alu(IR, reg_a, reg_b)
+                
+            elif IR == PUSH:
+                self.reg[SP] -= 1
+                self.ram[self.reg[SP]] = self.reg[reg_a]
+                
+            elif IR == POP:
+                self.reg[reg_a] = self.ram[self.reg[self.sp]]
+                self.reg[SP] += 1
+                
+            elif IR == CALL:
+                self.reg[SP] -= 1
+                shift_to = self.pc + (IR >> 6) + 1
+                self.ram[self.reg[SP]] = shift_to
+                self.pc = self.reg[reg_a]
+                continue
+                
+            elif IR == RET:
+                ret_value = self.ram[self.reg[SP]]
+                self.pc = ret_value
+                self.reg[SP] += 1
+                continue
+                
+            elif IR ==CMP:
+                self.alu(IR, reg_a, reg_b)
+            
+            elif IR == JMP:
+                self.pc = self.reg[reg_a]
+                continue
+            
+            elif IR == JEQ:
+                if self.fl == 1:
+                    self.pc = self.reg[reg_a]
+                    continue
+                    
+            elif IR == JNE:
+                if self.fl != 1:
+                    self.pc = self.reg[reg_a]
+                    continue
+                    
+            else:
+                print(f'Error: Unknown command')
+                running = False
+
+            self.pc += (IR >> 6) + 1
